@@ -42,7 +42,6 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
     all_years = historical_years + projection_years_list
 
     # Initialize DataFrame
-    # This structure is more complex to handle the detailed model
     idx = pd.MultiIndex.from_tuples([
         ('Income Statement', 'Revenue'), ('Income Statement', 'COGS'), ('Income Statement', 'Gross Profit'),
         ('Income Statement', 'SG&A'), ('Income Statement', 'EBITDA'), ('Income Statement', 'D&A'),
@@ -125,13 +124,28 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
             model.loc[('Cash Flow Statement', 'Change in Inventory'), year] = model.loc[('Balance Sheet', 'Inventory'), prev_year] - model.loc[('Balance Sheet', 'Inventory'), year]
             model.loc[('Cash Flow Statement', 'Change in Accounts Payable'), year] = model.loc[('Balance Sheet', 'Accounts Payable'), year] - model.loc[('Balance Sheet', 'Accounts Payable'), prev_year]
             model.loc[('Cash Flow Statement', 'Change in Accrued Liabilities'), year] = model.loc[('Balance Sheet', 'Accrued Liabilities'), year] - model.loc[('Balance Sheet', 'Accrued Liabilities'), prev_year]
-            model.loc[('Cash Flow Statement', 'Cash Flow from Operations (CFO)'), year] = model.loc['Cash Flow Statement', 'Net Income':'Change in Accrued Liabilities'].sum(axis=0)[year]
+            
+            # CORRECTED CFO CALCULATION
+            cfo_rows = [
+                ('Cash Flow Statement', 'Net Income'), ('Cash Flow Statement', 'D&A'),
+                ('Cash Flow Statement', 'Change in Accounts Receivable'), ('Cash Flow Statement', 'Change in Inventory'),
+                ('Cash Flow Statement', 'Change in Accounts Payable'), ('Cash Flow Statement', 'Change in Accrued Liabilities')
+            ]
+            model.loc[('Cash Flow Statement', 'Cash Flow from Operations (CFO)'), year] = model.loc[cfo_rows, year].sum()
+
             model.loc[('Cash Flow Statement', 'Capital Expenditures (Capex)'), year] = -(model.loc[('Income Statement', 'Revenue'), year] * assumptions['capex_percent_revenue'])
             model.loc[('Cash Flow Statement', 'Cash Flow from Investing (CFI)'), year] = model.loc[('Cash Flow Statement', 'Capital Expenditures (Capex)'), year]
             repayment = model.loc[('Balance Sheet', 'Long-Term Debt'), prev_year] * assumptions['debt_repayment_percent']
             model.loc[('Cash Flow Statement', 'Debt Issuance / (Repayment)'), year] = -repayment
             model.loc[('Cash Flow Statement', 'Cash Flow from Financing (CFF)'), year] = model.loc[('Cash Flow Statement', 'Debt Issuance / (Repayment)'), year]
-            model.loc[('Cash Flow Statement', 'Net Change in Cash'), year] = model.loc['Cash Flow Statement', ['Cash Flow from Operations (CFO)', 'Cash Flow from Investing (CFI)', 'Cash Flow from Financing (CFF)']].sum(axis=0)[year]
+            
+            # CORRECTED NET CHANGE IN CASH CALCULATION
+            net_cash_change_rows = [
+                ('Cash Flow Statement', 'Cash Flow from Operations (CFO)'),
+                ('Cash Flow Statement', 'Cash Flow from Investing (CFI)'),
+                ('Cash Flow Statement', 'Cash Flow from Financing (CFF)')
+            ]
+            model.loc[('Cash Flow Statement', 'Net Change in Cash'), year] = model.loc[net_cash_change_rows, year].sum()
 
         # --- Link CFS to Balance Sheet (Projections only) ---
         if year in projection_years_list:
@@ -142,9 +156,17 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
             model.loc[('Balance Sheet', 'Common Stock'), year] = model.loc[('Balance Sheet', 'Common Stock'), prev_year]
 
         # --- Final Balance Sheet Calculations (for all years) ---
-        model.loc[('Balance Sheet', 'Total Current Assets'), year] = model.loc['Balance Sheet', ['Cash & Cash Equivalents', 'Accounts Receivable', 'Inventory']].sum(axis=0)[year]
+        
+        # CORRECTED TOTAL CURRENT ASSETS CALCULATION
+        tca_rows = [('Balance Sheet', 'Cash & Cash Equivalents'), ('Balance Sheet', 'Accounts Receivable'), ('Balance Sheet', 'Inventory')]
+        model.loc[('Balance Sheet', 'Total Current Assets'), year] = model.loc[tca_rows, year].sum()
+        
         model.loc[('Balance Sheet', 'Total Assets'), year] = model.loc[('Balance Sheet', 'Total Current Assets'), year] + model.loc[('Balance Sheet', 'PP&E, Net'), year]
-        model.loc[('Balance Sheet', 'Total Current Liabilities'), year] = model.loc['Balance Sheet', ['Accounts Payable', 'Accrued Liabilities']].sum(axis=0)[year]
+        
+        # CORRECTED TOTAL CURRENT LIABILITIES CALCULATION
+        tcl_rows = [('Balance Sheet', 'Accounts Payable'), ('Balance Sheet', 'Accrued Liabilities')]
+        model.loc[('Balance Sheet', 'Total Current Liabilities'), year] = model.loc[tcl_rows, year].sum()
+
         model.loc[('Balance Sheet', 'Total Liabilities'), year] = model.loc[('Balance Sheet', 'Total Current Liabilities'), year] + model.loc[('Balance Sheet', 'Long-Term Debt'), year]
         model.loc[('Balance Sheet', 'Total Equity'), year] = model.loc[('Balance Sheet', 'Common Stock'), year] + model.loc[('Balance Sheet', 'Retained Earnings'), year]
         model.loc[('Balance Sheet', 'Total Liabilities & Equity'), year] = model.loc[('Balance Sheet', 'Total Liabilities'), year] + model.loc[('Balance Sheet', 'Total Equity'), year]
