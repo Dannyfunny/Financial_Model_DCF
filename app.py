@@ -36,7 +36,7 @@ def to_excel(df_dict):
                 df.loc['Balance Sheet'].to_excel(writer, sheet_name='Balance Sheet')
                 df.loc['Cash Flow Statement'].to_excel(writer, sheet_name='Cash Flow Statement')
             else:
-                 df.to_excel(writer, sheet_name=sheet_name)
+                df.to_excel(writer, sheet_name=sheet_name)
     processed_data = output.getvalue()
     return processed_data
 
@@ -44,7 +44,8 @@ def to_excel(df_dict):
 
 def build_financial_statements(assumptions, historical_data, projection_years_list):
     """Builds the three financial statements based on historicals and assumptions."""
-    historical_years = list(historical_data.keys())
+    # Ensure historical_years is sorted
+    historical_years = sorted(historical_data.keys())
     all_years = historical_years + projection_years_list
 
     # Initialize DataFrame
@@ -76,12 +77,14 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
         model.loc[('Income Statement', 'Revenue'), year] = historical_data[year]['Revenue']
         model.loc[('Income Statement', 'COGS'), year] = historical_data[year]['COGS']
         model.loc[('Income Statement', 'SG&A'), year] = historical_data[year]['SG&A']
+        model.loc[('Income Statement', 'D&A'), year] = historical_data[year]['D&A']
         model.loc[('Income Statement', 'Interest Expense'), year] = historical_data[year]['Interest Expense']
         model.loc[('Balance Sheet', 'Cash & Cash Equivalents'), year] = historical_data[year]['Cash']
         model.loc[('Balance Sheet', 'Accounts Receivable'), year] = historical_data[year]['Accounts Receivable']
         model.loc[('Balance Sheet', 'Inventory'), year] = historical_data[year]['Inventory']
         model.loc[('Balance Sheet', 'PP&E, Net'), year] = historical_data[year]['PP&E']
         model.loc[('Balance Sheet', 'Accounts Payable'), year] = historical_data[year]['Accounts Payable']
+        model.loc[('Balance Sheet', 'Accrued Liabilities'), year] = historical_data[year]['Accrued Liabilities']
         model.loc[('Balance Sheet', 'Long-Term Debt'), year] = historical_data[year]['Long-Term Debt']
         model.loc[('Balance Sheet', 'Common Stock'), year] = historical_data[year]['Common Stock']
         model.loc[('Balance Sheet', 'Retained Earnings'), year] = historical_data[year]['Retained Earnings']
@@ -93,22 +96,14 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
         # --- Income Statement ---
         if year in projection_years_list:
             model.loc[('Income Statement', 'Revenue'), year] = model.loc[('Income Statement', 'Revenue'), prev_year] * (1 + assumptions['revenue_growth_rate'])
-
-        model.loc[('Income Statement', 'COGS'), year] = model.loc[('Income Statement', 'Revenue'), year] * assumptions['cogs_percent_revenue']
-        model.loc[('Income Statement', 'Gross Profit'), year] = model.loc[('Income Statement', 'Revenue'), year] - model.loc[('Income Statement', 'COGS'), year]
-        model.loc[('Income Statement', 'SG&A'), year] = model.loc[('Income Statement', 'Revenue'), year] * assumptions['sga_percent_revenue']
-        model.loc[('Income Statement', 'EBITDA'), year] = model.loc[('Income Statement', 'Gross Profit'), year] - model.loc[('Income Statement', 'SG&A'), year]
-
-        if prev_year:
+            model.loc[('Income Statement', 'COGS'), year] = model.loc[('Income Statement', 'Revenue'), year] * assumptions['cogs_percent_revenue']
+            model.loc[('Income Statement', 'SG&A'), year] = model.loc[('Income Statement', 'Revenue'), year] * assumptions['sga_percent_revenue']
             model.loc[('Income Statement', 'D&A'), year] = model.loc[('Balance Sheet', 'PP&E, Net'), prev_year] * assumptions['depreciation_rate']
-        else: # Handle first historical year
-            model.loc[('Income Statement', 'D&A'), year] = historical_data[year]['D&A']
-
-        model.loc[('Income Statement', 'EBIT'), year] = model.loc[('Income Statement', 'EBITDA'), year] - model.loc[('Income Statement', 'D&A'), year]
-
-        if prev_year:
             model.loc[('Income Statement', 'Interest Expense'), year] = model.loc[('Balance Sheet', 'Long-Term Debt'), prev_year] * assumptions['cost_of_debt']
 
+        model.loc[('Income Statement', 'Gross Profit'), year] = model.loc[('Income Statement', 'Revenue'), year] - model.loc[('Income Statement', 'COGS'), year]
+        model.loc[('Income Statement', 'EBITDA'), year] = model.loc[('Income Statement', 'Gross Profit'), year] - model.loc[('Income Statement', 'SG&A'), year]
+        model.loc[('Income Statement', 'EBIT'), year] = model.loc[('Income Statement', 'EBITDA'), year] - model.loc[('Income Statement', 'D&A'), year]
         model.loc[('Income Statement', 'EBT'), year] = model.loc[('Income Statement', 'EBIT'), year] - model.loc[('Income Statement', 'Interest Expense'), year]
         model.loc[('Income Statement', 'Taxes'), year] = model.loc[('Income Statement', 'EBT'), year] * assumptions['tax_rate']
         model.loc[('Income Statement', 'Net Income'), year] = model.loc[('Income Statement', 'EBT'), year] - model.loc[('Income Statement', 'Taxes'), year]
@@ -119,8 +114,6 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
             model.loc[('Balance Sheet', 'Inventory'), year] = model.loc[('Income Statement', 'COGS'), year] * (assumptions['inventory_days'] / 365)
             model.loc[('Balance Sheet', 'Accounts Payable'), year] = model.loc[('Income Statement', 'COGS'), year] * (assumptions['ap_days'] / 365)
             model.loc[('Balance Sheet', 'Accrued Liabilities'), year] = model.loc[('Income Statement', 'Revenue'), year] * assumptions['accrued_liabilities_percent_revenue']
-        elif year in historical_years: # Use historicals for Accrued Liabilities
-             model.loc[('Balance Sheet', 'Accrued Liabilities'), year] = historical_data[year]['Accrued Liabilities']
 
         # --- Cash Flow Statement (Projections only) ---
         if year in projection_years_list:
@@ -162,12 +155,9 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
         # --- Final Balance Sheet Calculations (for all years) ---
         tca_rows = [('Balance Sheet', 'Cash & Cash Equivalents'), ('Balance Sheet', 'Accounts Receivable'), ('Balance Sheet', 'Inventory')]
         model.loc[('Balance Sheet', 'Total Current Assets'), year] = model.loc[tca_rows, year].sum()
-
         model.loc[('Balance Sheet', 'Total Assets'), year] = model.loc[('Balance Sheet', 'Total Current Assets'), year] + model.loc[('Balance Sheet', 'PP&E, Net'), year]
-
         tcl_rows = [('Balance Sheet', 'Accounts Payable'), ('Balance Sheet', 'Accrued Liabilities')]
         model.loc[('Balance Sheet', 'Total Current Liabilities'), year] = model.loc[tcl_rows, year].sum()
-
         model.loc[('Balance Sheet', 'Total Liabilities'), year] = model.loc[('Balance Sheet', 'Total Current Liabilities'), year] + model.loc[('Balance Sheet', 'Long-Term Debt'), year]
         model.loc[('Balance Sheet', 'Total Equity'), year] = model.loc[('Balance Sheet', 'Common Stock'), year] + model.loc[('Balance Sheet', 'Retained Earnings'), year]
         model.loc[('Balance Sheet', 'Total Liabilities & Equity'), year] = model.loc[('Balance Sheet', 'Total Liabilities'), year] + model.loc[('Balance Sheet', 'Total Equity'), year]
@@ -175,7 +165,7 @@ def build_financial_statements(assumptions, historical_data, projection_years_li
 
     return model
 
-def build_dcf_model(statements, assumptions, projection_years_list):
+def build_dcf_model(statements, assumptions, projection_years_list, historical_data):
     """Builds the DCF model."""
     dcf_idx = [
         'EBIT', 'Taxes on EBIT', 'NOPAT', 'D&A', 'Capital Expenditures (Capex)',
@@ -212,7 +202,7 @@ def build_dcf_model(statements, assumptions, projection_years_list):
 
     # Enterprise and Equity Value
     enterprise_value = dcf.loc['PV of UFCF'].sum() + pv_terminal_value
-    latest_historical_year = str(max([int(y) for y in historical_data.keys()]))
+    latest_historical_year = sorted(historical_data.keys())[-1]
     net_debt = statements.loc[('Balance Sheet', 'Long-Term Debt'), latest_historical_year] - statements.loc[('Balance Sheet', 'Cash & Cash Equivalents'), latest_historical_year]
     equity_value = enterprise_value - net_debt
     implied_share_price = equity_value / assumptions['shares_outstanding'] if assumptions['shares_outstanding'] > 0 else 0
@@ -227,55 +217,64 @@ def build_dcf_model(statements, assumptions, projection_years_list):
 
 # --- UI & App Layout ---
 
-# NEW: Get Company Name from User
+# Get Company Name from User
 company_name = st.text_input("Enter Company Name", "My Company")
 
 st.title(f"DCF Model: {company_name}")
-st.markdown("*An interactive tool for company valuation based on historical data and your assumptions.*")
+st.markdown("*An interactive tool for company valuation based on your own historical data and assumptions.*")
 
 # --- Sidebar for Inputs ---
 st.sidebar.header("Control Panel")
 
-# --- Historical Data Input ---
+# --- Historical Data Input (NEW DYNAMIC METHOD) ---
 with st.sidebar.expander("📈 Historical Data Input", expanded=True):
-    st.markdown("Enter the last 3 years of financial data (in millions).")
+    num_years = st.number_input("How many historical years?", min_value=2, max_value=5, value=3)
+    current_year = pd.to_datetime('today').year - 1
+    historical_years = [str(current_year - i) for i in range(num_years)][::-1]
 
-    historical_data = {}
-    cols = st.columns(3)
-    years = ['2022', '2023', '2024']
+    st.info(f"Please enter data for the years: {', '.join(historical_years)}")
 
-    default_data = {
-        '2022': {'Revenue': 5000, 'COGS': 2000, 'SG&A': 1000, 'D&A': 500, 'Interest Expense': 150, 'Cash': 500, 'Accounts Receivable': 450, 'Inventory': 600, 'PP&E': 2500, 'Accounts Payable': 250, 'Accrued Liabilities': 150, 'Long-Term Debt': 1500, 'Common Stock': 1000, 'Retained Earnings': 1150},
-        '2023': {'Revenue': 5500, 'COGS': 2200, 'SG&A': 1100, 'D&A': 550, 'Interest Expense': 160, 'Cash': 600, 'Accounts Receivable': 500, 'Inventory': 650, 'PP&E': 2800, 'Accounts Payable': 275, 'Accrued Liabilities': 165, 'Long-Term Debt': 1600, 'Common Stock': 1000, 'Retained Earnings': 1500},
-        '2024': {'Revenue': 6050, 'COGS': 2420, 'SG&A': 1210, 'D&A': 600, 'Interest Expense': 170, 'Cash': 700, 'Accounts Receivable': 550, 'Inventory': 700, 'PP&E': 3200, 'Accounts Payable': 300, 'Accrued Liabilities': 180, 'Long-Term Debt': 1700, 'Common Stock': 1000, 'Retained Earnings': 1900}
-    }
+    income_statement_items = ['Revenue', 'COGS', 'SG&A', 'D&A', 'Interest Expense']
+    balance_sheet_items = [
+        'Cash', 'Accounts Receivable', 'Inventory', 'PP&E', 'Accounts Payable',
+        'Accrued Liabilities', 'Long-Term Debt', 'Common Stock', 'Retained Earnings'
+    ]
+    
+    # Use session state to hold dataframes and prevent data loss on rerun
+    if 'historical_is' not in st.session_state or st.session_state.historical_is.shape[1] != len(historical_years):
+        st.session_state.historical_is = pd.DataFrame(0.0, index=income_statement_items, columns=historical_years)
+    if 'historical_bs' not in st.session_state or st.session_state.historical_bs.shape[1] != len(historical_years):
+        st.session_state.historical_bs = pd.DataFrame(0.0, index=balance_sheet_items, columns=historical_years)
 
-    for i, year in enumerate(years):
-        with cols[i]:
-            st.subheader(year)
-            historical_data[year] = {
-                'Revenue': st.number_input(f"Revenue {year}", value=default_data[year]['Revenue'], key=f"rev_{year}"),
-                'COGS': st.number_input(f"COGS {year}", value=default_data[year]['COGS'], key=f"cogs_{year}"),
-                'SG&A': st.number_input(f"SG&A {year}", value=default_data[year]['SG&A'], key=f"sga_{year}"),
-                'D&A': st.number_input(f"D&A {year}", value=default_data[year]['D&A'], key=f"dna_{year}"),
-                'Interest Expense': st.number_input(f"Interest Expense {year}", value=default_data[year]['Interest Expense'], key=f"int_{year}"),
-                'Cash': st.number_input(f"Cash {year}", value=default_data[year]['Cash'], key=f"cash_{year}"),
-                'Accounts Receivable': st.number_input(f"A/R {year}", value=default_data[year]['Accounts Receivable'], key=f"ar_{year}"),
-                'Inventory': st.number_input(f"Inventory {year}", value=default_data[year]['Inventory'], key=f"inv_{year}"),
-                'PP&E': st.number_input(f"PP&E {year}", value=default_data[year]['PP&E'], key=f"ppe_{year}"),
-                'Accounts Payable': st.number_input(f"A/P {year}", value=default_data[year]['Accounts Payable'], key=f"ap_{year}"),
-                'Accrued Liabilities': st.number_input(f"Accrued Liab. {year}", value=default_data[year]['Accrued Liabilities'], key=f"al_{year}"),
-                'Long-Term Debt': st.number_input(f"L/T Debt {year}", value=default_data[year]['Long-Term Debt'], key=f"ltd_{year}"),
-                'Common Stock': st.number_input(f"Common Stock {year}", value=default_data[year]['Common Stock'], key=f"cs_{year}"),
-                'Retained Earnings': st.number_input(f"Retained Earnings {year}", value=default_data[year]['Retained Earnings'], key=f"re_{year}"),
-            }
+    tab1, tab2 = st.tabs(["Income Statement", "Balance Sheet"])
+    with tab1:
+        st.subheader("Income Statement History")
+        st.session_state.historical_is = st.data_editor(st.session_state.historical_is, key="is_editor")
+    with tab2:
+        st.subheader("Balance Sheet History")
+        st.session_state.historical_bs = st.data_editor(st.session_state.historical_bs, key="bs_editor")
+
+    try:
+        combined_df = pd.concat([st.session_state.historical_is, st.session_state.historical_bs])
+        if combined_df.isnull().values.any() or (combined_df == 0).all().all():
+            st.sidebar.warning("Please fill in the historical data above.")
+            st.stop() # Stop execution if data is empty
+        historical_data = combined_df.to_dict()
+        st.sidebar.success("Historical data loaded.")
+    except Exception as e:
+        st.sidebar.error(f"Error processing data: {e}")
+        st.stop()
 
 # --- Calculated Historical Assumptions ---
+first_hist_year = historical_years[0]
+last_hist_year = historical_years[-1]
+
 try:
-    cagr = (historical_data['2024']['Revenue'] / historical_data['2022']['Revenue']) ** (1/2) - 1
-    cogs_percent_avg = np.mean([historical_data[y]['COGS'] / historical_data[y]['Revenue'] for y in years])
-    sga_percent_avg = np.mean([historical_data[y]['SG&A'] / historical_data[y]['Revenue'] for y in years])
-except ZeroDivisionError:
+    # Use dynamic years for calculations
+    cagr = (historical_data[last_hist_year]['Revenue'] / historical_data[first_hist_year]['Revenue']) ** (1 / (num_years - 1)) - 1 if num_years > 1 else 0
+    cogs_percent_avg = np.mean([historical_data[y]['COGS'] / historical_data[y]['Revenue'] for y in historical_years if historical_data[y]['Revenue'] != 0])
+    sga_percent_avg = np.mean([historical_data[y]['SG&A'] / historical_data[y]['Revenue'] for y in historical_years if historical_data[y]['Revenue'] != 0])
+except (ZeroDivisionError, KeyError):
     cagr, cogs_percent_avg, sga_percent_avg = 0.0, 0.0, 0.0
 
 # --- Operational Assumptions ---
@@ -296,7 +295,7 @@ with st.sidebar.expander("⚙️ Operational Assumptions"):
 
     st.markdown("**General**")
     tax_rate = st.slider("Corporate Tax Rate (%)", 0.0, 50.0, 21.0, 1.0) / 100
-    shares_outstanding = st.number_input("Shares Outstanding (in millions)", value=500.0)
+    shares_outstanding = st.number_input("Shares Outstanding (in millions)", value=500.0, min_value=0.0)
 
 # --- WACC Inputs ---
 with st.sidebar.expander("⚖️ WACC Inputs"):
@@ -307,11 +306,12 @@ with st.sidebar.expander("⚖️ WACC Inputs"):
 
     cost_of_equity = risk_free_rate + company_beta * market_risk_premium
     try:
-        cost_of_debt = historical_data['2024']['Interest Expense'] / historical_data['2024']['Long-Term Debt']
-    except ZeroDivisionError:
-        cost_of_debt = 0.03
-
-    market_value_of_debt = historical_data['2024']['Long-Term Debt']
+        # Use latest historical year for cost of debt
+        cost_of_debt = historical_data[last_hist_year]['Interest Expense'] / historical_data[last_hist_year]['Long-Term Debt']
+    except (ZeroDivisionError, KeyError):
+        cost_of_debt = 0.05 # Fallback value
+    
+    market_value_of_debt = historical_data[last_hist_year]['Long-Term Debt']
     total_capital = market_cap + market_value_of_debt
 
     try:
@@ -341,9 +341,9 @@ assumptions = {
 }
 
 # --- Model Execution ---
-projection_years_list = [str(int(max(historical_data.keys())) + i) for i in range(1, 6)]
+projection_years_list = [str(int(last_hist_year) + i) for i in range(1, 6)]
 statements = build_financial_statements(assumptions, historical_data, projection_years_list)
-dcf_model, metrics = build_dcf_model(statements, assumptions, projection_years_list)
+dcf_model, metrics = build_dcf_model(statements, assumptions, projection_years_list, historical_data)
 
 # --- Main Dashboard Display ---
 st.header("Valuation Summary")
@@ -352,7 +352,7 @@ col1.metric("Implied Share Price", f"${metrics['Implied Share Price']:.2f}")
 col2.metric("Enterprise Value", format_value(metrics['Enterprise Value'], "currency"))
 col3.metric("WACC", format_value(assumptions['wacc'], "percentage"))
 
-# --- Tabs for Detailed Analysis (Comps tab removed) ---
+# --- Tabs for Detailed Analysis ---
 tab1, tab2, tab3 = st.tabs(["📊 DCF Analysis", "🧾 Financial Statements", "⚖️ WACC Breakdown"])
 
 with tab1:
@@ -367,7 +367,6 @@ with tab1:
     st.subheader("Discounted Cash Flow (DCF) Calculation")
     st.dataframe(dcf_model.style.format("{:,.2f}"))
 
-# NEW: Financial statements are now in separate tables
 with tab2:
     st.subheader("Projected Income Statement")
     st.dataframe(statements.loc['Income Statement'].style.format("{:,.2f}"))
@@ -378,20 +377,18 @@ with tab2:
     st.subheader("Projected Cash Flow Statement")
     st.dataframe(statements.loc['Cash Flow Statement'].style.format("{:,.2f}"))
 
-
-# NEW: WACC table is refined and formulas are moved to an expander
 with tab3:
     st.subheader("WACC Calculation Breakdown")
     st.markdown("The Weighted Average Cost of Capital (WACC) is the average rate of return a company is expected to provide to all its different investors.")
 
     wacc_data = {
         'Component': ['Risk-Free Rate', 'Market Risk Premium', 'Company Beta', '**Cost of Equity (Ke)**',
-                      'Interest Expense (2024)', 'L/T Debt (2024)', '**Cost of Debt (Kd)**',
+                      f'Interest Expense ({last_hist_year})', f'L/T Debt ({last_hist_year})', '**Cost of Debt (Kd)**',
                       'Market Cap (E)', 'Market Value of Debt (D)', 'Corporate Tax Rate', '**WACC**'],
         'Value': [format_value(risk_free_rate, 'percentage'), format_value(market_risk_premium, 'percentage'),
                   f"{company_beta:.2f}", format_value(cost_of_equity, 'percentage'),
-                  format_value(historical_data['2024']['Interest Expense'], 'currency'),
-                  format_value(historical_data['2024']['Long-Term Debt'], 'currency'),
+                  format_value(historical_data[last_hist_year]['Interest Expense'], 'currency'),
+                  format_value(historical_data[last_hist_year]['Long-Term Debt'], 'currency'),
                   format_value(cost_of_debt, 'percentage'),
                   format_value(market_cap, 'currency'), format_value(market_value_of_debt, 'currency'),
                   format_value(tax_rate, 'percentage'), format_value(wacc, 'percentage')]
@@ -401,32 +398,15 @@ with tab3:
 
     with st.expander("See Formulas"):
         st.markdown("**Cost of Equity ($K_e$)**")
-        st.latex(r'''
-        K_e = R_f + \beta \times (R_m - R_f)
-        ''')
-        st.markdown(r'''
-        Where:
-        - $R_f$ = Risk-Free Rate
-        - $\beta$ = Company Beta
-        - $(R_m - R_f)$ = Market Risk Premium
-        ''')
+        st.latex(r'''K_e = R_f + \beta \times (R_m - R_f)''')
+        st.markdown(r'''Where: $R_f$ = Risk-Free Rate, $\beta$ = Company Beta, $(R_m - R_f)$ = Market Risk Premium''')
 
         st.markdown("**Weighted Average Cost of Capital (WACC)**")
-        st.latex(r'''
-        WACC = \left(\frac{E}{E+D}\right)K_e + \left(\frac{D}{E+D}\right)K_d(1-t)
-        ''')
-        st.markdown(r'''
-        Where:
-        - $E$ = Market Value of Equity (Market Cap)
-        - $D$ = Market Value of Debt
-        - $K_e$ = Cost of Equity
-        - $K_d$ = Cost of Debt
-        - $t$ = Corporate Tax Rate
-        ''')
+        st.latex(r'''WACC = \left(\frac{E}{E+D}\right)K_e + \left(\frac{D}{E+D}\right)K_d(1-t)''')
+        st.markdown(r'''Where: $E$ = Market Value of Equity, $D$ = Market Value of Debt, $K_e$ = Cost of Equity, $K_d$ = Cost of Debt, $t$ = Corporate Tax Rate''')
 
 
 # --- Download Button ---
-# NEW: Filename is now dynamic based on company name
 safe_company_name = "".join([c for c in company_name if c.isalpha() or c.isdigit() or c==' ']).rstrip()
 excel_file = to_excel({
     "DCF Analysis": dcf_model,
