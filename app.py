@@ -226,11 +226,32 @@ st.markdown("*An interactive tool for company valuation based on your own histor
 # --- Sidebar for Inputs ---
 st.sidebar.header("Control Panel")
 
-# --- Historical Data Input (NEW DYNAMIC METHOD) ---
+# --- Historical Data Input (UPDATED WITH DROPDOWNS) ---
 with st.sidebar.expander("📈 Historical Data Input", expanded=True):
-    num_years = st.number_input("How many historical years?", min_value=2, max_value=5, value=3)
-    current_year = pd.to_datetime('today').year - 1
-    historical_years = [str(current_year - i) for i in range(num_years)][::-1]
+    # Dropdowns for selecting historical period
+    last_full_year = pd.to_datetime('today').year - 1
+
+    # Dropdown for selecting the number of historical years
+    num_years_options = {2: "2 years", 3: "3 years", 4: "4 years", 5: "5 years"}
+    num_years = st.selectbox(
+        "Select number of historical years",
+        options=list(num_years_options.keys()),
+        format_func=lambda x: num_years_options[x],
+        index=1  # Defaults to 3 years
+    )
+
+    # Dropdown for selecting the first historical year
+    # The range of valid start years is calculated based on the number of years selected
+    latest_possible_start_year = last_full_year - num_years + 1
+    year_range = range(2010, latest_possible_start_year + 1)
+    start_year = st.selectbox(
+        "Select the first historical year",
+        options=year_range,
+        index=len(year_range) - 1  # Defaults to the most recent valid start year
+    )
+
+    # Generate the final list of historical years based on the selections
+    historical_years = [str(start_year + i) for i in range(num_years)]
 
     st.info(f"Please enter data for the years: {', '.join(historical_years)}")
 
@@ -239,11 +260,11 @@ with st.sidebar.expander("📈 Historical Data Input", expanded=True):
         'Cash', 'Accounts Receivable', 'Inventory', 'PP&E', 'Accounts Payable',
         'Accrued Liabilities', 'Long-Term Debt', 'Common Stock', 'Retained Earnings'
     ]
-    
-    # Use session state to hold dataframes and prevent data loss on rerun
-    if 'historical_is' not in st.session_state or st.session_state.historical_is.shape[1] != len(historical_years):
+
+    # Use session state; reset DataFrames if the selected years change
+    if 'historical_is' not in st.session_state or list(st.session_state.historical_is.columns) != historical_years:
         st.session_state.historical_is = pd.DataFrame(0.0, index=income_statement_items, columns=historical_years)
-    if 'historical_bs' not in st.session_state or st.session_state.historical_bs.shape[1] != len(historical_years):
+    if 'historical_bs' not in st.session_state or list(st.session_state.historical_bs.columns) != historical_years:
         st.session_state.historical_bs = pd.DataFrame(0.0, index=balance_sheet_items, columns=historical_years)
 
     tab1, tab2 = st.tabs(["Income Statement", "Balance Sheet"])
